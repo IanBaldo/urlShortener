@@ -87,7 +87,7 @@ function aliasToId (alias)
         local pos = string.find(BASE, alias:sub(i,i))
         
         if pos == nil then
-            print("Alias Inválido")
+            print("Alias Inválido (vogais não são permitidas)")
             return nil
         else
             id = id + (54^(i-1)) * tonumber(pos)
