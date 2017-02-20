@@ -3,105 +3,42 @@
     Author: Ian Baldo
 --]]
 
-local lunajson = require("lunajson")
-require("lsqlite3complete")
--- Cria o BD caso não exista
-myDb = sqlite3.open('urlshortenerDB')
--- Cria a tablea 'url' caso não exista
-myDb:exec "CREATE TABLE url (id TEXT PRIMARY KEY, url TEXT, shortUrl TEXT, alias TEXT)"
-myDb:close()
+
+lunajson = require("lunajson")
+require("db_funcs")
+
 
 -- Variáveis Globais
 defaultURL = "www.shortener/u/"
 BASE = "lyT3q2Zh_6CnfWxgzPYGrNvLHK145DwJ0tB8XbdR7MSsjpmQkcVF09" -- BASE 54
 
 
--- DB functions
-function db_addURL (id,url,pShortURL,alias)
-    local shortURL = pShortURL
-    local myDb = sqlite3.open('urlshortenerDB')
-    local sql = "INSERT INTO url VALUES('"..id.."','"..url.."','"..shortURL.."','"..alias.."')"
-    myDb:exec(sql)
 
-    if myDb:errcode() == 0 then
-        myDb:close()
-        return 0
-    else
-        local err = myDb:errcode()
-        print("DB ERROR ["..myDb:errcode().."]: "..myDb:errmsg())
-        myDb:close()
-        return err
-    end
-end
-
-function db_getDataById (id)
-    local myDb = sqlite3.open('urlshortenerDB')
-    local sql = "SELECT * FROM url WHERE id='"..id.."'"
-    myDb:exec(sql)
-    for data in myDb:nrows(sql) do
-        if myDb:errcode() == 0 then
-            myDb:close()
-            return data
-        else
-            local err = myDb:errcode()
-            print("DB ERROR ["..myDb:errcode().."]: "..myDb:errmsg())
-            myDb:close()
-            return nil
-        end 
-    end
-end
-
-function db_getDataByAlias (alias)
-    local myDb = sqlite3.open('urlshortenerDB')
-    local sql = "SELECT * FROM url WHERE alias='".. alias .."' or shortURL='"..alias.."'"
-    for data in myDb:nrows(sql) do
-        if data ~= nil then
-            myDb:close()
-            return data.url
-        else
-            myDb:close()
-            local response ={}
-            response.ERR_CODE = '002'
-            response.Description = "SHORTENED URL NOT FOUND"
-            return lunajson.encode(response)
-        end 
-    end
-end
-
-function db_getAll ()
-    local myDb = sqlite3.open('urlshortenerDB')
-    local sql = "SELECT * FROM url"
-    local dump = {}
-    for data in myDb:nrows(sql) do
-        table.insert( dump, data )
-    end
-
-    return lunajson.encode(dump)
-end
-
-function db_clear ()
-    local myDb = sqlite3.open('urlshortenerDB')
-    local sql = "DELETE FROM url"
-    myDb:exec(sql)
-end
-
-
-
+--[[
+    Função que trata a conversão e inserção no BD de uma nova URL
+]]
 function storeURL( url, alias )
-    local start = os.clock()
-    local id = generateId()
+    local start = os.clock() -- Benchmark
+    local id = generateId() -- Gera Id aleatório
 
+    -- Checa se o Id já existe
     local data = db_getDataById(id)
     if data ~= nil then
+        -- Id já está ocupado, faz chamada recursiva para tentar um novo Id
         return storeURL(url, alias)
     else
+        -- Checa se o usuário definiu um CUSTOM_ALIAS
         if alias == "" then
+            -- Gera um alias a partir do Id aleatório
             alias = encodeURL(id)
             id = tostring(id)
         else
+            -- Transforma o alias em um Id
             id = aliasToId(alias)
             if id == nil then
+                -- Alias Inválido (caractere inválido)
                 return
+            -- Checa se o alias já existe
             elseif db_getDataByAlias(alias) ~= nil then
                 local response ={}
                 response.ERR_CODE = '001'
@@ -110,7 +47,10 @@ function storeURL( url, alias )
             end
         end
         
+        -- Gera a nova url
         local shortURL = defaultURL .. alias
+
+        -- Adiciona a nova entrada no BD
         if db_addURL(id,url,shortURL,alias) == 0 then
             -- Sucesso!
             local result = {}
@@ -134,9 +74,11 @@ end
 --[[
     aliasToId:
         Param:
-        alias -> Recebe o alias que o usuário digito
+        alias -> Recebe o alias que o usuário digitou
 
     Faz a conversão do alias(base 54) para o id(base 10)
+    Nota: na base de caracteres para o alias não existem vogais
+    (tentativa de evitar que o alias seja uma palavra "ruim")
 ]]
 function aliasToId (alias)
     alias = string.reverse( alias )
@@ -163,12 +105,14 @@ function generateId ()
     math.randomseed(os.time())
     local id
     for i=1,math.random(1,10) do
-        id = math.random(100000000,999999999) -- random 6 digit Id
+        id = math.random(100000000,999999999) -- Número grande para gerar um alias de no mínimo 6 caracteres
     end
     return id
 end
 
-
+--[[
+    Gera um alias a partir do Id aleatório
+]]
 function encodeURL(Id)
     local newURL = ""
     local id = tonumber(Id)
